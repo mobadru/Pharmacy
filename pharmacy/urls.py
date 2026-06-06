@@ -10,27 +10,27 @@ from .views import (
 )
 
 urlpatterns = [
-    # ================= PHARMACY =================
+    # PHARMACY
     path('pharmacies/', manage_pharmacy),
     path('pharmacies/<int:pk>/', manage_pharmacy),
 
-    # ================= STAFF =================
+    # STAFF
     path('staff/', manage_staff),
     path('staff/<int:pk>/', manage_staff),
 
-    # ================= MEDICINE =================
+    # MEDICINES
     path('medicines/', manage_medicine),
     path('medicines/<int:pk>/', manage_medicine),
 
-    # ================= STOCK =================
+    # STOCK
     path('stocks/', manage_stock),
     path('stocks/<int:pk>/', manage_stock),
 
-    # ================= RESERVATION =================
+    # RESERVATIONS
     path('reservations/', manage_reservation),
     path('reservations/<int:pk>/', manage_reservation),
 
-    # ================= RESERVATION WORKFLOW =================
+    # WORKFLOW
     path('reservations/<int:pk>/approve/', approve_reservation),
     path('reservations/<int:pk>/reject/', reject_reservation),
 ]

@@ -23,10 +23,11 @@ class PharmacySerializer(serializers.ModelSerializer):
 
 
 # =========================
-# STAFF
+# STAFF (SECURE + READABLE)
 # =========================
 class PharmacyStaffSerializer(serializers.ModelSerializer):
 
+    user = UserSerializer(read_only=True)
     pharmacy_name = serializers.ReadOnlyField(source='pharmacy.name')
 
     class Meta:
@@ -58,10 +59,11 @@ class StockSerializer(serializers.ModelSerializer):
 
 
 # =========================
-# RESERVATION (CORE LOGIC)
+# RESERVATION (CORE SYSTEM)
 # =========================
 class ReservationSerializer(serializers.ModelSerializer):
 
+    # readable fields for frontend
     user_name = serializers.ReadOnlyField(source='user.username')
     pharmacy_name = serializers.ReadOnlyField(source='pharmacy.name')
     medicine_name = serializers.ReadOnlyField(source='medicine.name')
@@ -69,3 +71,10 @@ class ReservationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reservation
         fields = '__all__'
+
+    # SECURITY FIX: prevent frontend from faking user
+    def create(self, validated_data):
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            validated_data['user'] = request.user
+        return super().create(validated_data)

@@ -19,20 +19,22 @@ class Pharmacy(models.Model):
 
 
 # =========================
-# PHARMACY STAFF
+# PHARMACY STAFF (SECURE)
 # =========================
 class PharmacyStaff(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="staff_profile"
+    )
     pharmacy = models.ForeignKey(
         Pharmacy,
         on_delete=models.CASCADE,
         related_name="staff"
     )
-    name = models.CharField(max_length=150)
-    email = models.EmailField(unique=True)
-    password = models.CharField(max_length=255)
 
     def __str__(self):
-        return self.name
+        return self.user.username
 
 
 # =========================
@@ -42,13 +44,14 @@ class Medicine(models.Model):
     name = models.CharField(max_length=150)
     brand = models.CharField(max_length=100)
     requires_prescription = models.BooleanField(default=False)
+    description = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return self.name
 
 
 # =========================
-# STOCK (INVENTORY)
+# STOCK
 # =========================
 class Stock(models.Model):
     pharmacy = models.ForeignKey(
@@ -61,17 +64,21 @@ class Stock(models.Model):
         on_delete=models.CASCADE,
         related_name="stocks"
     )
+
     quantity = models.PositiveIntegerField(default=0)
 
+    batch_number = models.CharField(max_length=100, blank=True, null=True)
+    expiry_date = models.DateField(blank=True, null=True)
+
     class Meta:
-        unique_together = ('pharmacy', 'medicine')  # one record per medicine per pharmacy
+        unique_together = ('pharmacy', 'medicine')
 
     def __str__(self):
         return f"{self.pharmacy.name} - {self.medicine.name} ({self.quantity})"
 
 
 # =========================
-# RESERVATION (WORKFLOW SYSTEM)
+# RESERVATION (FULL SYSTEM)
 # =========================
 class Reservation(models.Model):
 
@@ -80,6 +87,7 @@ class Reservation(models.Model):
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
         ('expired', 'Expired'),
+        ('completed', 'Completed'),
     ]
 
     user = models.ForeignKey(
@@ -111,5 +119,15 @@ class Reservation(models.Model):
         default='pending'
     )
 
+    processed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="processed_reservations"
+    )
+
     def __str__(self):
-        return f"{self.user.username} - {self.medicine.name} ({self.status})"
+        if self.user:
+            return f"{self.user.username} - {self.medicine.name} ({self.status})"
+        return f"Unknown - {self.medicine.name} ({self.status})"

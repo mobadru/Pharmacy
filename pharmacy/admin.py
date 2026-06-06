@@ -16,10 +16,9 @@ class PharmacyAdmin(admin.ModelAdmin):
 # =========================
 @admin.register(PharmacyStaff)
 class PharmacyStaffAdmin(admin.ModelAdmin):
-    list_display = ('name', 'email', 'pharmacy')
-    search_fields = ('name', 'email')
+    list_display = ('user', 'pharmacy')
+    search_fields = ('user__username', 'user__email')
     list_filter = ('pharmacy',)
-
 
 # =========================
 # MEDICINE
