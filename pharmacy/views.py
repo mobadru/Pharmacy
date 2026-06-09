@@ -15,31 +15,44 @@ from .serializers import (
 # =========================
 # GENERIC CRUD API
 # =========================
+def get_staff_pharmacy(user):
+    try:
+        return user.staff_profile.pharmacy
+    except:
+        return None
+
 def generic_api(model_class, serializer_class):
 
     @api_view(['GET', 'POST', 'PUT', 'DELETE'])
     @permission_classes([IsAuthenticated])
     def api(request, pk=None):
 
+        pharmacy = get_staff_pharmacy(request.user)
+
+        if not pharmacy:
+          return Response({"detail": "No pharmacy assigned"}, status=403)
         # ================= GET =================
         if request.method == 'GET':
 
+            # SINGLE OBJECT
             if pk:
                 try:
                     obj = model_class.objects.get(pk=pk)
+
+                    # 🔐 SECURITY CHECK
+                    if hasattr(obj, "pharmacy") and pharmacy:
+                        if obj.pharmacy != pharmacy:
+                            return Response({"detail": "Forbidden"}, status=403)
+
+                    serializer = serializer_class(obj)
+                    return Response(serializer.data)
+
                 except model_class.DoesNotExist:
-                    return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+                    return Response({"detail": "Not found"}, status=404)
 
-                serializer = serializer_class(obj)
-                return Response(serializer.data)
-
-            # OPTIONAL SECURITY FILTER (staff only see own pharmacy data)
-            if model_class == Stock or model_class == Reservation:
-                try:
-                    staff = request.user.staff_profile
-                    objs = model_class.objects.filter(pharmacy=staff.pharmacy)
-                except:
-                    objs = model_class.objects.none()
+            # LIST VIEW (FILTER BY PHARMACY)
+            if hasattr(model_class, "pharmacy"):
+                objs = model_class.objects.filter(pharmacy=pharmacy)
             else:
                 objs = model_class.objects.all()
 
@@ -51,25 +64,37 @@ def generic_api(model_class, serializer_class):
 
             serializer = serializer_class(
                 data=request.data,
-                context={'request': request}   # IMPORTANT FIX
+                context={'request': request}
             )
 
             if serializer.is_valid():
                 instance = serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                # 🔐 FORCE PHARMACY OWNERSHIP
+                if hasattr(instance, "pharmacy") and pharmacy:
+                    instance.pharmacy = pharmacy
+                    instance.save()
+
+                return Response(serializer.data, status=201)
+
+            return Response(serializer.errors, status=400)
 
         # ================= PUT =================
         if request.method == 'PUT':
 
             if not pk:
-                return Response({"detail": "ID required"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "ID required"}, status=400)
 
             try:
                 obj = model_class.objects.get(pk=pk)
+
+                # 🔐 SECURITY CHECK
+                if hasattr(obj, "pharmacy") and pharmacy:
+                    if obj.pharmacy != pharmacy:
+                        return Response({"detail": "Forbidden"}, status=403)
+
             except model_class.DoesNotExist:
-                return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"detail": "Not found"}, status=404)
 
             serializer = serializer_class(
                 obj,
@@ -82,25 +107,29 @@ def generic_api(model_class, serializer_class):
                 serializer.save()
                 return Response(serializer.data)
 
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.errors, status=400)
 
         # ================= DELETE =================
         if request.method == 'DELETE':
 
             if not pk:
-                return Response({"detail": "ID required"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "ID required"}, status=400)
 
             try:
                 obj = model_class.objects.get(pk=pk)
+
+                # 🔐 SECURITY CHECK
+                if hasattr(obj, "pharmacy") and pharmacy:
+                    if obj.pharmacy != pharmacy:
+                        return Response({"detail": "Forbidden"}, status=403)
+
                 obj.delete()
-                return Response({"detail": "Deleted"}, status=status.HTTP_204_NO_CONTENT)
+                return Response({"detail": "Deleted"}, status=204)
 
             except model_class.DoesNotExist:
-                return Response({"detail": "Not found"}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"detail": "Not found"}, status=404)
 
     return api
-
-
 # =========================
 # APPROVE RESERVATION
 # =========================
