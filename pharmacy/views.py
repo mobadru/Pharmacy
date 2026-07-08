@@ -3,6 +3,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from .models import UserProfile
+
 
 from .models import (
     Pharmacy,
@@ -64,13 +68,15 @@ def generic_api(model_class, serializer_class):
 
         user = request.user
         pharmacy = get_staff_pharmacy(user)
-
         # ==================================================
         # GET
         # ==================================================
 
         if request.method == "GET":
 
+            # --------------------------
+            # GET SINGLE RECORD
+            # --------------------------
             if pk:
                 try:
                     obj = model_class.objects.get(pk=pk)
@@ -106,36 +112,62 @@ def generic_api(model_class, serializer_class):
                         status=status.HTTP_404_NOT_FOUND,
                     )
 
-            # LIST
+            # --------------------------
+            # LIST RECORDS
+            # --------------------------
 
             if model_class == Pharmacy:
+
                 queryset = Pharmacy.objects.all()
 
             elif model_class == Product:
+
                 queryset = Product.objects.all()
 
             elif model_class == Stock:
 
-                if not is_staff(user):
-                    return Response(
-                        {"detail": "Staff only"},
-                        status=status.HTTP_403_FORBIDDEN,
+                # Staff sees only their pharmacy stock
+                if is_staff(user):
+
+                    queryset = Stock.objects.filter(
+                        pharmacy=pharmacy
                     )
 
-                queryset = Stock.objects.filter(pharmacy=pharmacy)
+                # Patients see all available medicines
+                elif is_patient(user):
+
+                    queryset = Stock.objects.filter(
+                        quantity__gt=0
+                    )
+
+                else:
+
+                    return Response(
+                        {"detail": "Unauthorized"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
 
             elif model_class == Reservation:
 
                 if is_staff(user):
-                    queryset = Reservation.objects.filter(pharmacy=pharmacy)
+
+                    queryset = Reservation.objects.filter(
+                        pharmacy=pharmacy
+                    )
+
                 else:
-                    queryset = Reservation.objects.filter(user=user)
+
+                    queryset = Reservation.objects.filter(
+                        user=user
+                    )
 
             else:
+
                 queryset = model_class.objects.all()
 
-            return Response(serializer_class(queryset, many=True).data)
-
+            return Response(
+                serializer_class(queryset, many=True).data
+            )
         # ==================================================
         # POST
         # ==================================================
@@ -319,6 +351,32 @@ def approve_reservation(request, pk):
 
     return Response({"detail": "Reservation approved"})
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def profile(request):
+    user = request.user
+
+    profile = getattr(user, "profile", None)
+
+    pharmacy = get_staff_pharmacy(user)
+
+    data = {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "role": profile.role if profile else None,
+        "pharmacy": pharmacy.name if pharmacy else None,
+        "pharmacy_id": pharmacy.id if pharmacy else None,
+    }
+
+    return Response(data)
+
 
 # ==================================================
 # REJECT RESERVATION
@@ -350,7 +408,114 @@ def reject_reservation(request, pk):
 
     return Response({"detail": "Reservation rejected"})
 
+from django.contrib.auth.models import User
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
 
+from .models import UserProfile
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def register_patient(request):
+
+    username = request.data.get("username")
+    email = request.data.get("email")
+    password = request.data.get("password")
+
+
+    if not username or not password:
+
+        return Response(
+            {
+                "error":"Username and password required"
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+    if User.objects.filter(username=username).exists():
+
+        return Response(
+            {
+                "error":"Username already exists"
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+    user = User.objects.create_user(
+
+        username=username,
+
+        email=email,
+
+        password=password
+
+    )
+
+
+    UserProfile.objects.create(
+
+        user=user,
+
+        role="patient"
+
+    )
+
+
+    return Response(
+
+        {
+            "message":"Patient account created successfully"
+        },
+
+        status=status.HTTP_201_CREATED
+
+    )
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def forgot_password(request):
+
+    email = request.data.get("email")
+
+
+    if not email:
+
+        return Response(
+            {
+                "error":"Email required"
+            },
+            status=400
+        )
+
+
+    user = User.objects.filter(
+        email=email
+    ).first()
+
+
+    if not user:
+
+        return Response(
+
+            {
+                "error":"Email not found"
+            },
+
+            status=404
+
+        )
+
+
+    return Response(
+
+        {
+            "message":"Password reset request accepted"
+        }
+
+    )
 # ==================================================
 # ENDPOINTS
 # ==================================================
@@ -360,3 +525,5 @@ manage_staff = generic_api(PharmacyStaff, PharmacyStaffSerializer)
 manage_product = generic_api(Product, ProductSerializer)
 manage_stock = generic_api(Stock, StockSerializer)
 manage_reservation = generic_api(Reservation, ReservationSerializer)
+
+
