@@ -3,6 +3,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from .models import UserProfile
@@ -18,6 +20,7 @@ from .models import (
 
 from .serializers import (
     CustomTokenObtainPairSerializer,
+    UserProfileSerializer,
     PharmacySerializer,
     PharmacyStaffSerializer,
     ProductSerializer,
@@ -68,9 +71,6 @@ def generic_api(model_class, serializer_class):
 
         user = request.user
         pharmacy = get_staff_pharmacy(user)
-        # ==================================================
-        # GET
-        # ==================================================
 
         if request.method == "GET":
 
@@ -168,6 +168,7 @@ def generic_api(model_class, serializer_class):
             return Response(
                 serializer_class(queryset, many=True).data
             )
+
         # ==================================================
         # POST
         # ==================================================
@@ -254,6 +255,27 @@ def generic_api(model_class, serializer_class):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+            # ------------------------------------------
+            # STOCK AUTHORIZATION
+            # Staff can only update stock belonging
+            # to their assigned pharmacy
+            # ------------------------------------------
+            if model_class == Stock:
+
+                if not is_staff(user):
+                    return Response(
+                        {"detail": "Staff only"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                if obj.pharmacy != pharmacy:
+                    return Response(
+                        {
+                            "detail": "You do not have permission to manage this pharmacy's stock."
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
             serializer = serializer_class(
                 obj,
                 data=request.data,
@@ -291,6 +313,27 @@ def generic_api(model_class, serializer_class):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
+            # ------------------------------------------
+            # STOCK AUTHORIZATION
+            # Staff can only delete stock belonging
+            # to their assigned pharmacy
+            # ------------------------------------------
+            if model_class == Stock:
+
+                if not is_staff(user):
+                    return Response(
+                        {"detail": "Staff only"},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+                if obj.pharmacy != pharmacy:
+                    return Response(
+                        {
+                            "detail": "You do not have permission to delete this pharmacy's stock."
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
             obj.delete()
 
             return Response(
@@ -299,8 +342,6 @@ def generic_api(model_class, serializer_class):
             )
 
     return api
-
-
 # ==================================================
 # APPROVE RESERVATION
 # ==================================================
@@ -355,27 +396,86 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-@api_view(["GET"])
+@api_view(["GET", "PUT", "PATCH"])
 @permission_classes([IsAuthenticated])
 def profile(request):
     user = request.user
 
     profile = getattr(user, "profile", None)
 
+    if profile is None:
+        return Response(
+            {"detail": "Profile not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if request.method == "GET":
+        data = UserProfileSerializer(profile).data
+    else:
+        serializer = UserProfileSerializer(
+            profile,
+            data=request.data,
+            partial=True,
+        )
+
+        if not serializer.is_valid():
+            return Response(
+                serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = UserProfileSerializer(serializer.save()).data
+
     pharmacy = get_staff_pharmacy(user)
 
-    data = {
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "first_name": user.first_name,
-        "last_name": user.last_name,
-        "role": profile.role if profile else None,
-        "pharmacy": pharmacy.name if pharmacy else None,
-        "pharmacy_id": pharmacy.id if pharmacy else None,
-    }
+    data["pharmacy"] = pharmacy.name if pharmacy else None
+    data["pharmacy_id"] = pharmacy.id if pharmacy else None
 
     return Response(data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    current_password = request.data.get("current_password")
+    new_password = request.data.get("new_password")
+    confirm_password = request.data.get("confirm_password")
+
+    if not current_password or not new_password or not confirm_password:
+        return Response(
+            {"detail": "All password fields are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user = request.user
+
+    if not user.check_password(current_password):
+        return Response(
+            {"detail": "Current password is incorrect."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if new_password != confirm_password:
+        return Response(
+            {"detail": "New passwords do not match."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        validate_password(new_password, user)
+    except ValidationError as error:
+        return Response(
+            {"detail": error.messages},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user.set_password(new_password)
+    user.save(update_fields=["password"])
+
+    return Response(
+        {"detail": "Password changed successfully."},
+        status=status.HTTP_200_OK,
+    )
 
 
 # ==================================================

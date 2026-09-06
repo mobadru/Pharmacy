@@ -11,6 +11,7 @@ from .views import (
     register_patient,
     forgot_password,
     profile,
+    change_password,
 )
 
 
@@ -123,6 +124,12 @@ urlpatterns = [
         "profile/",
         profile,
         name="profile",
+    ),
+
+    path(
+        "change-password/",
+        change_password,
+        name="change-password"
     ),
 
     path(

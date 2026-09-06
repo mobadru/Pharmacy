@@ -91,12 +91,42 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserProfileSerializer(serializers.ModelSerializer):
 
-    user = UserSerializer(read_only=True)
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+    username = serializers.CharField(
+        source="user.username",
+        read_only=True
+    )
+    email = serializers.EmailField(
+        source="user.email",
+        required=False,
+        allow_blank=False
+    )
 
 
     class Meta:
         model = UserProfile
-        fields = "__all__"
+        fields = [
+            "id",
+            "user",
+            "username",
+            "email",
+            "role",
+            "phone",
+            "address",
+            "gender",
+            "date_of_birth",
+        ]
+        read_only_fields = ["user", "username", "role"]
+
+    def update(self, instance, validated_data):
+        user_data = validated_data.pop("user", {})
+        email = user_data.get("email")
+
+        if email is not None:
+            instance.user.email = email
+            instance.user.save(update_fields=["email"])
+
+        return super().update(instance, validated_data)
 
 
 
